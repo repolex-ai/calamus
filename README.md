@@ -77,6 +77,16 @@ Two things the host must do:
 1. **Build the index from the ontology, never from the data.** An index that depends on what a store holds goes stale the first time a new spelling is written.
 2. **Make sure no store holds a statement that uses an abstract name.** The prefixes you pass as abstract are dropped from every answer. If a store ever does hold `subtexture:title`, dropping it hides real data. Assert it in a test.
 
+What it costs, measured by w4r3z-pan on a live Pan store of 84 million statements (2026-11-19, pan 349c745). The question is "count everything that is a `pan:Media`", which fans out to three classes and finds 235,360 things:
+
+| Form | Time |
+|---|---|
+| `?m a pan:Media`, rewritten by calamus | 0.13 s |
+| the same question written by hand with VALUES and DISTINCT | 0.11 s |
+| `?m a pan:Image` alone, one class, no fan-out (229,571 things) | 0.07 s |
+
+So the rewrite itself adds about 0.02 s over writing the fan-out by hand. Most of the difference from the one-class query is the fan-out and its DISTINCT, which a correct answer needs either way. A swap of one name for one name adds nothing.
+
 An engine's own working queries should not go through `rewrite`. They use stored spellings and must not change, or slow down, when an ontology gains a name.
 
 To see what an ontology makes of a name:
