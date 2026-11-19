@@ -25,7 +25,9 @@
 //!
 //!   - a predicate or a class that is a variable (`?s ?p ?o`, `?s a ?c`):
 //!     it returns what is stored, with nothing added;
-//!   - expressions: `FILTER(?p = <P>)` compares against stored spellings;
+//!   - expressions: `FILTER(?p = <P>)` compares against stored spellings.
+//!     A name found there that the index has other spellings for is listed
+//!     in `Report::left_as_written`, so the host can say so;
 //!   - anything inside `SERVICE { }`: the store it is sent to rewrites it
 //!     against its own ontology;
 //!   - anything inside `GRAPH <g> { }` for a graph the host says holds an
@@ -55,12 +57,19 @@ pub struct Options {
 }
 
 /// What a rewrite did, for a host that tells its caller what was run.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Report {
     /// Names replaced by one other name.
     pub swapped: usize,
     /// Names replaced by two or more.
     pub fanned_out: usize,
+    /// Names the index has other spellings for, found where nothing is
+    /// rewritten: as a value in an expression, such as
+    /// `FILTER(?p = <P>)` or `FILTER(?q = <<( ?s <P> ?o )>>)`. There they are
+    /// compared with what is stored, as written, and will most likely match
+    /// nothing. Each name once, in address order. A host should tell its
+    /// caller, because the answer itself will not.
+    pub left_as_written: Vec<NamedNode>,
 }
 
 impl Report {
@@ -90,6 +99,8 @@ pub fn rewrite(query: &mut Query, index: &Index, options: &Options) -> Result<Re
     if !r.blank.is_empty() {
         walk::pattern(pattern, &mut Named { blank: &r.blank })?;
     }
+    r.report.left_as_written.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    r.report.left_as_written.dedup();
     Ok(r.report)
 }
 
@@ -283,7 +294,12 @@ impl Rewriter<'_> {
 
     fn expression(&mut self, e: &mut Expression) -> Result<()> {
         match e {
-            Expression::NamedNode(_) | Expression::Literal(_) | Expression::Variable(_) | Expression::Bound(_) => {}
+            Expression::NamedNode(n) => {
+                if self.index.property(n.as_ref()) != Targets::Same || self.index.class(n.as_ref()) != Targets::Same {
+                    self.report.left_as_written.push(n.clone());
+                }
+            }
+            Expression::Literal(_) | Expression::Variable(_) | Expression::Bound(_) => {}
             Expression::Or(a, b)
             | Expression::And(a, b)
             | Expression::Equal(a, b)

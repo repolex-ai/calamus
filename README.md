@@ -66,7 +66,7 @@ What a rewrite does:
 What it leaves alone:
 
 - a predicate or a class that is a variable (`?s ?p ?o`, `?s a ?c`): you get what is stored, nothing added;
-- expressions: `FILTER(?p = subtexture:title)` compares against stored spellings;
+- expressions: `FILTER(?p = subtexture:title)` compares against stored spellings and will most likely match nothing. `Report::left_as_written` lists each such name, so the host can tell its caller;
 - anything inside `SERVICE { }`: the store it is sent to rewrites it against its own ontology;
 - anything inside `GRAPH <g> { }` for a graph you name as holding an ontology;
 - a CONSTRUCT template;

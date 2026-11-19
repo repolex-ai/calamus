@@ -1,6 +1,6 @@
 [package]
 name = "calamus"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.80"
 description = "Prepare a parsed SPARQL query for an oxigraph store: rewrite it from an ontology, put values into its parameters, resolve short addresses"

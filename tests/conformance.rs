@@ -106,7 +106,7 @@ fn stored(sparql: &str) -> Vec<String> {
 #[test]
 fn case_1_a_shared_property_with_one_bridge_is_swapped_in_place() {
     let (query, report) = rewritten("SELECT ?x ?n WHERE { ?x base:name ?n }");
-    assert_eq!(report, Report { swapped: 1, fanned_out: 0 });
+    assert_eq!(report, Report { swapped: 1, fanned_out: 0, ..Default::default() });
     // A swap adds nothing: the query is the one a caller would have written.
     assert_eq!(query, parse("SELECT ?x ?n WHERE { ?x pan:name ?n }"));
     assert_eq!(answer(query).1.len(), 4);
@@ -142,12 +142,27 @@ fn case_5_a_class_in_the_middle_finds_its_subclasses() {
 
 #[test]
 fn case_6_an_unbound_property_or_class_returns_only_what_is_stored() {
-    for sparql in ["SELECT ?p ?o WHERE { :img1 ?p ?o }", "SELECT ?c (COUNT(?s) AS ?n) WHERE { ?s a ?c } GROUP BY ?c", "SELECT ?x WHERE { ?x ?p ?o FILTER(?p = base:name) }"] {
+    for sparql in ["SELECT ?p ?o WHERE { :img1 ?p ?o }", "SELECT ?c (COUNT(?s) AS ?n) WHERE { ?s a ?c } GROUP BY ?c"] {
         let (query, report) = rewritten(sparql);
         assert!(!report.changed(), "{sparql}");
         assert_eq!(answer(query), answer(parse(sparql)), "{sparql}");
     }
     assert!(!rows("SELECT ?p ?o WHERE { :img1 ?p ?o }").iter().any(|r| r.contains("base.example")));
+}
+
+#[test]
+fn a_shared_name_in_an_expression_is_left_as_written_and_reported() {
+    // Nothing is rewritten in an expression, so these match nothing. The
+    // report names what was left, so the host can tell its caller.
+    let named = |sparql: &str| rewritten(sparql).1.left_as_written.iter().map(|n| n.as_str().replace("http://base.example/", "base:").replace("http://pan.example/", "pan:")).collect::<Vec<_>>();
+    assert_eq!(named("SELECT ?x WHERE { ?x ?p ?o FILTER(?p = base:name) }"), ["base:name"]);
+    assert_eq!(named("SELECT ?q WHERE { ?r rdf:reifies ?q FILTER(?q = <<( :img1 base:name \"old name\" )>>) }"), ["base:name"]);
+    assert_eq!(named("SELECT ?x WHERE { ?x a ?c FILTER(?c IN (base:Thing, pan:Media, pan:Video)) FILTER(?c != base:Thing) }"), ["base:Thing", "pan:Media"]);
+    // A name with no other spelling, and a name in a pattern, are not listed.
+    assert!(named("SELECT ?x WHERE { ?x base:name ?n ; a ?c FILTER(?c = pan:Video) }").is_empty());
+    let (query, report) = rewritten("SELECT ?x WHERE { ?x ?p ?o FILTER(?p = base:name) }");
+    assert!(!report.changed());
+    assert!(answer(query).1.is_empty());
 }
 
 #[test]
@@ -198,7 +213,7 @@ fn a_thing_with_two_spellings_or_two_kinds_is_one_answer() {
 #[test]
 fn a_fan_out_in_a_path_is_an_alternative_and_gives_each_answer_once() {
     let (query, report) = rewritten("SELECT ?x WHERE { ?x base:title|pan:name \"same\" }");
-    assert_eq!(report, Report { swapped: 0, fanned_out: 1 });
+    assert_eq!(report, Report { swapped: 0, fanned_out: 1, ..Default::default() });
     // :img3 matches under two spellings and is one answer.
     assert_eq!(answer(query).1, ["<:img3>"]);
     // A stored property with a sub-property asks for it too.
@@ -300,7 +315,7 @@ fn bind_then_names_then_rewrite_is_the_whole_preparation() {
 
     // The class came in as a value and was still fanned out; the property
     // was swapped; the short address points at the other store.
-    assert_eq!(report, Report { swapped: 1, fanned_out: 1 });
+    assert_eq!(report, Report { swapped: 1, fanned_out: 1, ..Default::default() });
     let text = query.to_string();
     assert!(text.contains("<http://pan.example/relatedTo> <http://data.example/squad/theirs/pan/Image/x>"), "{text}");
     assert!(text.contains("<http://pan.example/Image>") && text.contains("<http://pan.example/Video>"), "{text}");
