@@ -91,7 +91,7 @@ pub fn rewrite(query: &mut Query, index: &Index, options: &Options) -> Result<Re
     while text.contains(&prefix) {
         prefix.push('_');
     }
-    let mut r = Rewriter { index, options, prefix, minted: 0, blank: HashMap::new(), report: Report::default() };
+    let mut r = Rewriter { index, options, prefix, minted: 0, blank: HashMap::new(), graphs: Vec::new(), report: Report::default() };
     let pattern = match query {
         Query::Select { pattern, .. } | Query::Describe { pattern, .. } | Query::Ask { pattern, .. } | Query::Construct { pattern, .. } => pattern,
     };
@@ -128,6 +128,8 @@ struct Rewriter<'a> {
     prefix: String,
     minted: usize,
     blank: HashMap<BlankNode, Variable>,
+    /// The variables of the GRAPH blocks the walk is inside, outermost first.
+    graphs: Vec<Variable>,
     report: Report,
 }
 
@@ -191,6 +193,12 @@ impl Rewriter<'_> {
             inner = join(values, inner);
             invented.push(variable);
         }
+        // Inside GRAPH ?g, list ?g too. oxigraph binds a GRAPH variable only
+        // through the patterns it can see, and it cannot see into a
+        // subquery that does not list the variable: without this, a block
+        // whose every pattern fanned out came back with ?g unbound (found
+        // in Syrinx, 2026-11-19; tested against oxigraph 0.5.9).
+        listed.extend(self.graphs.iter().cloned());
         listed.retain(|v| !invented.contains(v));
         listed.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         listed.dedup();
@@ -399,7 +407,15 @@ impl Rewriter<'_> {
             GraphPattern::Graph { name, inner } => {
                 let ontology = matches!(name, NamedNodePattern::NamedNode(g) if self.is_ontology_graph(g.as_str()));
                 if !ontology {
-                    self.pattern(inner)?;
+                    let named = matches!(name, NamedNodePattern::Variable(_));
+                    if let NamedNodePattern::Variable(v) = name {
+                        self.graphs.push(v.clone());
+                    }
+                    let walked = self.pattern(inner);
+                    if named {
+                        self.graphs.pop();
+                    }
+                    walked?;
                 }
             }
             GraphPattern::Extend { inner, expression, .. } => {

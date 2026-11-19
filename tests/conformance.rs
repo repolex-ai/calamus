@@ -38,6 +38,9 @@ const DATA: &str = r#"
 :commit1 a pan:Commit ; pan:name "not a thing" .
 _:was rdf:reifies <<( :img1 pan:name "old name" )>> .
 
+GRAPH <http://data.example/g1> { :n1 pan:title "in g1" ; pan:caption "cap g1" . }
+GRAPH <http://data.example/g2> { :n2 pan:caption "cap g2" . }
+
 GRAPH <http://base.example/ontology/pan> {
   pan:name <http://www.w3.org/2002/07/owl#equivalentProperty> <http://base.example/name> .
 }
@@ -319,4 +322,16 @@ fn bind_then_names_then_rewrite_is_the_whole_preparation() {
     let text = query.to_string();
     assert!(text.contains("<http://pan.example/relatedTo> <http://data.example/squad/theirs/pan/Image/x>"), "{text}");
     assert!(text.contains("<http://pan.example/Image>") && text.contains("<http://pan.example/Video>"), "{text}");
+}
+
+#[test]
+fn a_fan_out_inside_a_graph_block_keeps_the_graph_variable() {
+    // base:title is stored as pan:title and pan:caption, so the one pattern
+    // in the block fans out, and the block holds nothing else. Each row must
+    // still say which graph it came from.
+    let got = rows("SELECT ?g ?t WHERE { GRAPH ?g { ?x base:title ?t } }");
+    assert_eq!(got, vec!["<:g1> \"cap g1\"", "<:g1> \"in g1\"", "<:g2> \"cap g2\""]);
+    // The same when the pattern lists nothing: one row per graph that matches.
+    let which = rows("SELECT ?g WHERE { GRAPH ?g { :n2 base:title \"cap g2\" } }");
+    assert_eq!(which, vec!["<:g2>"]);
 }
